@@ -1,0 +1,196 @@
+package mas.behaviours;
+
+import java.util.ArrayList;
+import java.util.Hashtable;
+import java.util.List;
+import java.util.Random;
+
+import env.Attribute;
+import env.Couple;
+import jade.core.behaviours.Behaviour;
+import jade.domain.DFService;
+import jade.domain.FIPAException;
+import jade.domain.FIPAAgentManagement.DFAgentDescription;
+import jade.domain.FIPAAgentManagement.ServiceDescription;
+import jade.lang.acl.ACLMessage;
+import jade.lang.acl.MessageTemplate;
+import jade.lang.acl.UnreadableException;
+import princ.Node;
+import princ.BackpackInfo;
+
+
+public class Interblocage extends Behaviour {
+
+	/**
+	 * 
+	 */
+	private static final long serialVersionUID = 2937488200050001116L;
+	private List<Node> noeudsVus;
+	
+	private int indDijkstra;
+	private List<Node> listeLargeur;
+	private List<Integer> chemin;
+	private boolean dijkstra;
+	
+	private int exitValue;
+
+	
+	
+	/*
+	 * L'agent selectionne une case aléatoire de la carte est s'y dirige
+	 * S'il ne peut atteindre une case du chemin, il recommence la demarche
+	 * Lorsqu'il atteint la case, il retourne dans son behaviour
+	 */
+	public Interblocage(final mas.abstractAgent myagent, List<Node> noeudsVus){
+		this.noeudsVus = noeudsVus;
+		this.dijkstra = false;
+		this.indDijkstra = 0;
+		this.listeLargeur = new ArrayList<Node>();
+		this.chemin = new ArrayList<Integer>();
+		exitValue = 6;
+
+	}
+	
+	
+	
+	
+	@Override
+	public void action() {
+		
+		//System.out.println(this.myAgent.getLocalName()+" Interblocage behaviour");
+		exitValue = 6;
+		String myPosition=((mas.abstractAgent)this.myAgent).getCurrentPosition();
+		
+		
+		try {
+			Thread.sleep(1000);
+		} catch (InterruptedException e) {
+			e.printStackTrace();
+		}
+		
+		
+		
+		/*****
+		 * If we are not already doing a computed dijkstra
+		 *****/
+		if(!dijkstra){
+			int indiceNoeud = indInList(myPosition, noeudsVus);
+			Node noeudActuel = noeudsVus.get(indiceNoeud);
+			
+			Random r= new Random();
+			int moveId=r.nextInt(noeudsVus.size());
+			
+			dijkstra = true;
+			listeLargeur.clear();
+			int indice = 0;
+			chemin.clear();
+			List<Integer> tabInd = new ArrayList<Integer>();
+			listeLargeur.add(noeudActuel);
+			tabInd.add(0);
+			boolean test = false;
+			
+			for(int i=0;i<tabInd.size(); ++i) {
+				for(Node n : listeLargeur.get(i).getSuccesseurs()){ 
+					if(!listeLargeur.contains(n)){	
+						listeLargeur.add(n);
+						tabInd.add(i);
+						
+						if(n.getNom().equals(noeudsVus.get(moveId).getNom())){
+							test=true;
+							break;
+						}
+					}
+				}
+				if(test)
+					break;
+			}
+			
+			
+
+			
+			indice=tabInd.size()-1;
+			while(indice!=0){
+				chemin.add(indice);
+				indice = tabInd.get(indice);
+			}
+			
+			indDijkstra = 1;
+			
+			if( !((mas.abstractAgent)this.myAgent).moveTo(listeLargeur.get(chemin.get(chemin.size()-indDijkstra)).getNom()) ){ //On accede aux noeuds correspondant au chemin a travers leur indice dans listeLargeur 
+				exitValue = 6;
+				dijkstra = false;
+				indDijkstra = 0;
+				listeLargeur.clear();
+				chemin.clear();
+			}
+		}
+		
+		
+		
+		
+		
+		
+		/*****
+		 * If we are already doing a computed dijkstra
+		 *****/
+		else{
+			if(indDijkstra < chemin.size()){
+				indDijkstra++;
+				//System.out.println("Agent "+this.myAgent.getLocalName()+" dijkstra " + listeLargeur.get(chemin.get(0)).getNom()+ " AND MY POS "+myPosition+ " "+ listeLargeur.get(chemin.get(0)).getOpen()+" taille de ind et chemin : "+indDijkstra +" "+chemin.size());
+				if( !((mas.abstractAgent)this.myAgent).moveTo(listeLargeur.get(chemin.get(chemin.size()-indDijkstra)).getNom()) ){ //On accede aux noeuds correspondant au chemin a travers leur indice dans listeLargeur 
+					exitValue = 6;
+					dijkstra = false;
+					indDijkstra = 0;
+					listeLargeur.clear();
+					chemin.clear();
+				}
+			}
+			
+			if(indDijkstra == chemin.size()){
+				dijkstra = false;
+				indDijkstra = 0;
+				listeLargeur.clear();
+				chemin.clear();
+				exitValue = 7;
+			}
+			
+		}
+		
+		
+		if(exitValue == 6){ // Avant de continuer son chemin il peut d'abord communiquer
+			Random test= new Random();
+			double resRandom = test.nextDouble();
+			if(resRandom < 0.25)
+				exitValue = 11;
+			if(resRandom >= 0.25 && resRandom < 0.50)
+				exitValue = 12;
+			if(resRandom >= 0.50)
+				exitValue = 6;
+		}
+		
+	}
+
+	@Override
+	public boolean done() {
+		return true;
+	}
+	
+	public int onEnd() {
+		return exitValue;
+	}
+
+	
+	
+	
+	
+	// Si valeur retournee est -1 alors pas dans la liste, sinon indice.
+	public int indInList(String nomNoeud, List<Node> noeudsRencontres){
+		int i;
+		for(i=0; i<noeudsRencontres.size(); ++i){
+			if(nomNoeud.equals(noeudsRencontres.get(i).getNom())){
+				return i;
+			}
+		}
+		return -1;
+	}
+}

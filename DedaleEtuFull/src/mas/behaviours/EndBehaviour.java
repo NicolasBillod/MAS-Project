@@ -1,0 +1,254 @@
+package mas.behaviours;
+
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Random;
+
+import env.Attribute;
+import env.Couple;
+import jade.core.behaviours.Behaviour;
+import jade.domain.DFService;
+import jade.domain.FIPAException;
+import jade.domain.FIPAAgentManagement.DFAgentDescription;
+import jade.domain.FIPAAgentManagement.ServiceDescription;
+import jade.lang.acl.ACLMessage;
+import jade.lang.acl.MessageTemplate;
+import jade.lang.acl.UnreadableException;
+
+import java.io.IOException;
+import java.io.Serializable;
+
+
+public class EndBehaviour extends Behaviour {
+
+	private static final long serialVersionUID = -256781922185738239L;
+	private List<String> agentsConnectes;
+	private boolean maillage;
+	private boolean fin;
+	private List<String> agentsFinis;
+	private int identique;
+	
+	public EndBehaviour(final mas.abstractAgent myagent){
+		agentsConnectes = new ArrayList<String>();
+		agentsFinis = new ArrayList<String>();		
+		maillage = false;
+		fin = false;
+		identique = 0;
+	}
+	
+	
+	
+	public void action() {
+		
+		
+		if(agentsFinis.size() == 0)
+			agentsFinis.add(this.myAgent.getName());
+		
+		List<Couple<String,List<Attribute>>> lobs=((mas.abstractAgent)this.myAgent).observe();
+		ACLMessage msg=new ACLMessage(ACLMessage.INFORM);
+		
+		DFAgentDescription template = new DFAgentDescription();
+        ServiceDescription sd = new ServiceDescription();
+        sd.setType("explorer");
+        template.addServices(sd);
+        int nbAgents = 0;
+        
+        try {
+        	DFAgentDescription[] otherAgents = DFService.search(myAgent, template);
+        	nbAgents = otherAgents.length;
+            for (int i = 0; i < nbAgents; ++i) {
+            	if(!otherAgents[i].getName().getName().equals(this.myAgent.getName())) // To avoid sending a message to himself
+            		msg.addReceiver(otherAgents[i].getName()); // otherAgents[i].getName() is an AID
+            }
+        }
+        catch (FIPAException fe) {
+        	fe.printStackTrace();
+        }	
+        
+        if(nbAgents == 1){
+        	fin = true;
+        	done();
+        }        	
+        
+        // Tant que tous les agents n'ont pas finis de collecter ou que l'on ne fait pas un maillage
+        if(agentsFinis.size() < nbAgents && !maillage){
+        	
+        	
+        	// On selectionne une direction aleatoire
+        	Random r= new Random();
+			int moveId=r.nextInt(lobs.size());
+        	
+			// On se deplace dans cette direction
+			((mas.abstractAgent)this.myAgent).moveTo(lobs.get(moveId).getLeft());			
+
+			msg.setSender(this.myAgent.getAID());
+			
+			try{
+				  msg.setContentObject((Serializable) agentsFinis);
+			}catch(IOException e){
+				e.printStackTrace();
+			}
+			msg.setConversationId("Fin");			
+			
+			// On previent qu'on a finis
+			((mas.abstractAgent)this.myAgent).sendMessage(msg);
+        	
+			
+			
+			MessageTemplate mt;
+			mt = MessageTemplate.MatchConversationId("Fin");
+			ACLMessage reply = myAgent.receive(mt);
+			
+			this.myAgent.blockingReceive(mt, 400);
+			
+			// Si on obtient une reponse de quelqu'un on fusionne les deux listes de noms
+			if(reply != null){
+				
+				List<String> listeNom =  new ArrayList<String>();
+				
+				try {
+					listeNom = (List<String>)reply.getContentObject();
+				
+					for(String s: listeNom){
+						if(!agentsFinis.contains(s))
+							agentsFinis.add(s);
+					}				
+					
+				} catch (UnreadableException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}					
+				
+			}
+			
+			MessageTemplate mt2;
+			mt2 = MessageTemplate.MatchConversationId("Maillage1");
+			ACLMessage reply2 = myAgent.receive(mt2);
+			
+			this.myAgent.blockingReceive(mt, 200);
+			
+			if(reply2 != null){
+				maillage = true;
+				agentsConnectes.add(this.myAgent.getName());		
+			}
+			
+			
+        }else{
+        	
+        	if(!maillage){
+        		
+        		MessageTemplate mt;
+				mt = MessageTemplate.MatchConversationId("Maillage1");
+				ACLMessage reply = myAgent.receive(mt);
+				
+				this.myAgent.blockingReceive(mt, 600);
+				
+				if(reply != null){					
+					maillage = true;
+					agentsConnectes.add(this.myAgent.getName());
+					
+				}else{
+				
+				// On selectionne une direction aleatoire
+	        	Random r= new Random();
+				int moveId=r.nextInt(lobs.size());
+	        	
+				// On se deplace dans cette direction
+				((mas.abstractAgent)this.myAgent).moveTo(lobs.get(moveId).getLeft());
+				
+				msg.setContent("Mesh formation");
+				msg.setConversationId("Maillage1");
+				msg.setSender(this.myAgent.getAID());
+	        	
+				((mas.abstractAgent)this.myAgent).sendMessage(msg);
+				
+				}
+				
+			}else{
+				
+				identique++;
+				
+				MessageTemplate mt;
+				mt = MessageTemplate.MatchConversationId("Maillage2");
+				ACLMessage reply = myAgent.receive(mt);
+				
+				this.myAgent.blockingReceive(mt, 300);
+				
+				if(reply != null){
+					
+					List<String> listeNom =  new ArrayList<String>();
+					
+					try {
+						listeNom = (List<String>)reply.getContentObject();
+					
+						for(String s: listeNom){
+							if(!agentsConnectes.contains(s))
+								agentsConnectes.add(s);
+						}				
+						
+					} catch (UnreadableException e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
+					}					
+					
+				}
+				
+				if(agentsConnectes.size() < nbAgents){
+						
+					Random r= new Random();
+					int choix=r.nextInt(2);
+							
+					if(choix == 0){
+
+						try{
+							  msg.setContentObject((Serializable) agentsConnectes);
+						}catch(IOException e){
+							e.printStackTrace();
+						}
+						
+						msg.setConversationId("Maillage2");
+						msg.setSender(this.myAgent.getAID());
+						
+						((mas.abstractAgent)this.myAgent).sendMessage(msg);	
+						
+					}else{
+
+						msg.setContent("Mesh formation");
+						msg.setConversationId("Maillage1");
+						msg.setSender(this.myAgent.getAID());
+			        	
+						((mas.abstractAgent)this.myAgent).sendMessage(msg);
+						
+					}
+						
+				}else{
+					fin = true;
+					done();
+				}
+				
+			}							
+        	
+        }
+        
+        if(identique > 150){
+        	maillage = false;
+        	identique = 0;
+        }
+        
+        try {
+			Thread.sleep(600);
+		} catch (InterruptedException e) {
+			e.printStackTrace();
+		}
+        
+	}
+	
+
+	@Override
+	public boolean done() {
+		// TODO Auto-generated method stub
+		return fin;
+	}
+	
+}

@@ -1,0 +1,153 @@
+package mas.behaviours;
+
+import jade.core.AID;
+import jade.core.Agent;
+import jade.core.behaviours.Behaviour;
+import jade.domain.DFService;
+import jade.domain.FIPAException;
+import jade.domain.FIPAAgentManagement.DFAgentDescription;
+import jade.domain.FIPAAgentManagement.ServiceDescription;
+import jade.lang.acl.ACLMessage;
+import jade.lang.acl.MessageTemplate;
+import jade.lang.acl.UnreadableException;
+import princ.Node;
+import java.util.ArrayList;
+import java.util.List;
+
+
+
+public class SayHello extends Behaviour{
+
+	/**
+	 * 
+	 */
+	private static final long serialVersionUID = -2058134622078521998L;
+	private List<Node> noeudsVus;
+	private int nbFermes;
+
+	/**
+	 * An agent tries to contact its friend and to give him its current position
+	 * @param myagent the agent who posses the behaviour
+	 *  
+	 */
+	public SayHello (final Agent myagent, List<Node> noeudsVus, int nbFermes) {
+		super(myagent);
+		this.noeudsVus = noeudsVus;
+		this.nbFermes = nbFermes;
+	}
+
+	@Override
+	public void action() {
+
+		String myPosition=((mas.abstractAgent)this.myAgent).getCurrentPosition();
+
+		ACLMessage msg=new ACLMessage(ACLMessage.INFORM); // ACLMessage.INFORM = 7
+		msg.setSender(this.myAgent.getAID());
+		
+
+		if (myPosition!=""){
+			
+			
+			System.out.println("Agent "+this.myAgent.getLocalName()+ " is sending a Hello message.");
+			msg.setContent("Hello World, I'm at "+myPosition);
+			msg.setConversationId("Hello");
+			msg.setSender(this.myAgent.getAID());
+
+			
+			
+			/****
+			 Getting AID of all the other agents still register in the DFS
+			 ****/
+			DFAgentDescription template = new DFAgentDescription();
+	        ServiceDescription sd = new ServiceDescription();
+	        sd.setType("explorer");
+	        template.addServices(sd);
+	        
+	        try {
+	        	DFAgentDescription[] otherAgents = DFService.search(myAgent, template);
+				System.out.println(otherAgents.length +" results");
+
+	            for (int i = 0; i < otherAgents.length; ++i) {
+	            	if(!otherAgents[i].getName().getName().equals(this.myAgent.getName())) // To avaid sending the message to himself
+	            		msg.addReceiver(otherAgents[i].getName()); // otherAgents[i].getName() is an AID
+	            }
+				((mas.abstractAgent)this.myAgent).sendMessage(msg);
+	            
+				
+	        }
+	        catch (FIPAException fe) {
+	        	fe.printStackTrace();
+	        }	
+	            
+	        MessageTemplate mt;
+	        mt = MessageTemplate.MatchConversationId("Carte");
+
+			
+			ACLMessage reply = myAgent.receive(mt);
+			if(reply != null){
+			 	List<Node> carte =  new ArrayList<Node>();
+			 	int ind; 
+			 	
+				System.out.println("Agent "+this.myAgent.getLocalName()+", current size of the list of seen "+noeudsVus.size());
+
+			 	try {
+					carte = (List<Node>)reply.getContentObject();
+					System.out.println("Size of reply : "+ carte.size());
+					Node actuel;
+					
+					for (Node n : carte){
+						ind=indInList(n.getNom(),noeudsVus);
+								
+						if(ind == -1){ // Si le noeud n'appartient pas aux noeudsVus
+							noeudsVus.add(n);
+						}
+						else{
+							 if(!n.getOpen()){ // Si le noeud appartient + est ferme dans la carte recue
+								 actuel=noeudsVus.get(ind);
+								 
+								 if(!actuel.getOpen()){ // Check s'il est ferme dans noeudsVus
+									 if(actuel.getTreasure()>n.getTreasure())
+										 actuel.setTreasure(n.getTreasure());
+								 }
+								 else{
+									 actuel.update(n);
+									 nbFermes++;
+								 }
+								 
+							 }
+						}
+							
+					}
+					System.out.println("Agent "+this.myAgent.getLocalName()+", carte bien recu !! et nb de noeuds : "+noeudsVus.size());
+				} catch (UnreadableException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
+			}
+			else{
+				
+				System.out.println("test");
+
+				block(20000); // Check for message during 2 seconds
+			}
+			
+		}
+
+	}
+	
+	// Si valeur retournee est -1 alors pas dans la liste, sinon indice.
+	public int indInList(String nomNoeud, List<Node> noeudsRencontres){
+		int i;
+		for(i=0; i<noeudsRencontres.size(); ++i){
+			if(nomNoeud.equals(noeudsRencontres.get(i).getNom())){
+				return i;
+			}
+		}
+		return -1;
+	}
+	
+	public boolean done(){
+		return true;
+	}
+
+}

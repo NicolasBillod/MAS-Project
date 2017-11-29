@@ -1,0 +1,364 @@
+package mas.behaviours;
+
+import java.util.ArrayList;
+import java.util.Hashtable;
+import java.util.List;
+import java.util.Random;
+
+import env.Attribute;
+import env.Couple;
+import jade.core.behaviours.Behaviour;
+import princ.Node;
+import princ.BackpackInfo;
+
+
+public class TreasureHunt extends Behaviour {
+
+
+	private static final long serialVersionUID = 3689741941194878438L;
+	private List<Node> noeudsVus;
+	private int typeT;
+	private int exitValue;
+	private List<BackpackInfo> bagInfos;
+	
+	private boolean dijkstra;
+	private int indDijkstra;
+	private List<Node> listeLargeur;
+	private List<Integer> chemin;
+	
+	private List<Node> treasureList;
+	
+	private int qTreasureObj;
+	
+	
+	/*
+	 * Chasse aux tresors :
+	 * L'agent fait la liste des tresors qu'il connait
+	 * Il selectionne celui qui a la quantite la plus proche de la capacite de son sac
+	 * S'il connait un agent plus 'adequat' pour ce tresor, il choisit le plus interessant apres celui-ci
+	 * S'il est bloque en chemin il execute le behaviour Interblocage
+	 */
+	public TreasureHunt(final mas.abstractAgent myagent, List<Node> noeudsVus, int typeT, /*Hashtable<String, BackpackInfo> bagInfos*/ List<BackpackInfo> bagInfos){
+		this.noeudsVus = noeudsVus;
+		this.typeT = typeT;
+		this.exitValue = 4;
+		this.bagInfos = bagInfos;
+		
+		this.dijkstra = false;
+		this.indDijkstra = 0;
+		this.listeLargeur = new ArrayList<Node>();
+		this.chemin = new ArrayList<Integer>();		
+		this.treasureList = new ArrayList<Node>();
+		
+		this.qTreasureObj = 0;
+	}
+	
+	
+	
+	
+	
+	@Override
+	public void action() {
+		String myPosition=((mas.abstractAgent)this.myAgent).getCurrentPosition();
+
+		exitValue = 4;
+		
+		if (myPosition!=""){
+			//System.out.println("Starting Treasure Hunt");
+		
+			try {
+				Thread.sleep(600);
+			} catch (InterruptedException e) {
+				e.printStackTrace();
+			}
+			
+			if(!dijkstra || listeLargeur.isEmpty()){
+				
+				if(((mas.agents.CognitifAgent)this.myAgent).getTypeT() == 0){
+					if(!treasureList.isEmpty()) // Initialize the treasure list
+						treasureList.clear();
+					for( Node n : noeudsVus){
+						if(n.getTreasure() != 0)
+							treasureList.add(n);
+					}
+
+				}
+				if(((mas.agents.CognitifAgent)this.myAgent).getTypeT() != 0){
+					if(!treasureList.isEmpty()) // Initialize the treasure list
+						treasureList.clear();
+					
+					for( Node n : noeudsVus){
+						if(n.getTreasure() != 0 && n.getTypeT() == ((mas.agents.CognitifAgent)this.myAgent).getTypeT())
+							treasureList.add(n);
+					}
+				}
+				
+				
+				int indiceNoeud = indInList(myPosition, noeudsVus);
+				Node noeudActuel = noeudsVus.get(indiceNoeud);
+				
+				String treasureToGet = "";
+				List<String> exploAssigned = new ArrayList<String>();
+				int freeSpace = ((mas.abstractAgent)this.myAgent).getBackPackFreeSpace();
+				int minDiff = -1;
+				
+				if(treasureList.isEmpty() || freeSpace == 0){
+					// go to randomWalk, it's over.
+					System.out.println();
+					System.out.println("Over for agent "+this.myAgent.getLocalName()+" Treasure list empty or no freeSpace");
+					exitValue = 8;
+					System.out.println("Treasure type : "+((mas.agents.CognitifAgent)this.myAgent).getTypeT()+" backpackfreespace :"+((mas.abstractAgent)this.myAgent).getBackPackFreeSpace());
+					System.out.println("Treasure remaining on the map : ");
+					for( Node n : noeudsVus){
+						if(n.getTreasure() != 0)
+							System.out.println(n.getNom()+" qTreasure : "+n.getTreasure()+" type : "+n.getTypeT());
+					}
+					return;
+				}
+					
+				
+				
+				
+				
+				for(int i=0; i<treasureList.size(); ++i){ // For each treasure on the map (with same type)
+					
+					//System.out.println(treasureList.get(i).getNom()+" type "+treasureList.get(i).getTypeT()+"   quantity "+treasureList.get(i).getTreasure());
+					
+					int diffTreasure = Math.abs(treasureList.get(i).getTreasure() - freeSpace);
+					
+					int otherExploDiff = -1;
+					int minOtherDiff = -1;
+					String otherExploTreasure = "";
+
+					
+					if(diffTreasure < minDiff || minDiff == -1) { // But also have to check if another known explo is better fit
+						for(int j=0; j<bagInfos.size(); ++j){ // For each known explorer
+							if(bagInfos.get(j).getTypeT() == treasureList.get(i).getTypeT() && (exploAssigned.isEmpty() || !exploAssigned.contains(bagInfos.get(j).getNom())) ){ // with same treasure type and not already assigned
+								otherExploDiff =  Math.abs(treasureList.get(i).getTreasure() - bagInfos.get(j).getCapacity());
+								if( (minOtherDiff == -1 && otherExploDiff < diffTreasure) || (otherExploDiff < diffTreasure && otherExploDiff < minOtherDiff) ){
+									minOtherDiff = otherExploDiff;
+									otherExploTreasure = bagInfos.get(j).getNom();
+								}
+							}
+						}
+						
+						if(minOtherDiff != -1)
+							exploAssigned.add(otherExploTreasure);
+						
+						else{
+							minDiff = diffTreasure;
+							treasureToGet = treasureList.get(i).getNom();
+							qTreasureObj = treasureList.get(i).getTreasure();
+						}
+					}
+
+				}
+				
+				if(treasureToGet.equals("")){
+					// You didn't find any fitting treasure
+					// go for the biggest difference then
+					int maxDiff = -1;
+					int diffTreasure = 0;
+					for(int i=0; i<treasureList.size(); ++i){ // For each treasure on the map (with same type)
+						diffTreasure = Math.abs(treasureList.get(i).getTreasure() - freeSpace);
+						if(diffTreasure > maxDiff || maxDiff == -1) {
+							maxDiff = diffTreasure;
+							treasureToGet = treasureList.get(i).getNom();
+							qTreasureObj = treasureList.get(i).getTreasure();
+						}
+					}
+					
+					//System.out.println("No treasure to get?");
+					/*exitValue = 8;
+					return;*/
+				}				
+				
+				
+				
+				
+				// Let's compute a dijkstra to the cell "treasureToGet"
+				if(!treasureToGet.equals("")){
+
+					dijkstra = true;
+					listeLargeur.clear();
+					int indice = 0;
+					chemin.clear();
+					List<Integer> tabInd = new ArrayList<Integer>();
+					listeLargeur.add(noeudActuel);
+					tabInd.add(0);
+
+					boolean test = false;
+					
+					if(!noeudActuel.getNom().equals(treasureToGet)){ // If we are not already on the objective
+						
+						for(int i=0;i<tabInd.size(); ++i) {
+							for(Node n : listeLargeur.get(i).getSuccesseurs()){
+								if(!listeLargeur.contains(n)){ // So we don't loop
+		
+									listeLargeur.add(n);
+									tabInd.add(i);
+									
+									if(n.getNom().equals(treasureToGet)){
+										test=true;
+										break;
+									}
+								}
+								
+							}
+							if(test)
+								break;
+						}
+						
+						
+			
+						
+						indice=tabInd.size()-1;
+						while(indice!=0){
+							chemin.add(indice);
+							indice = tabInd.get(indice);
+						}
+							
+						
+						
+						indDijkstra = 1;
+						//System.out.println("TREASURE HUNT Agent "+this.myAgent.getLocalName()+ " Pos " + myPosition + " obj: "+listeLargeur.get(chemin.get(0)).getNom());
+						
+						if( !((mas.abstractAgent)this.myAgent).moveTo(listeLargeur.get(chemin.get(chemin.size()-indDijkstra)).getNom()) ){ //On accede aux noeuds correspondant au chemin a travers leur indice dans listeLargeur 
+							dijkstra = false;
+							indDijkstra = 0;
+							listeLargeur.clear();
+							chemin.clear();
+							//System.out.println(this.myAgent.getLocalName()+ "Collision !");
+							exitValue = 5;
+						}
+					}
+					else{
+						//System.out.println(this.myAgent.getLocalName()+ "Same cell !");
+
+						indDijkstra = 1;
+						chemin.add(0);
+					}
+				
+				}
+			}
+			
+			
+			
+			
+			
+			/*****
+			 * If we are already doing a computed dijkstra
+			 *****/
+			else{
+				if(listeLargeur.get(chemin.get(0)).getTreasure() != qTreasureObj){
+					dijkstra = false;
+					indDijkstra = 0;
+					listeLargeur.clear();
+					chemin.clear();
+				}
+				else{
+					if(indDijkstra < chemin.size()){
+						indDijkstra++;
+						if( !((mas.abstractAgent)this.myAgent).moveTo(listeLargeur.get(chemin.get(chemin.size()-indDijkstra)).getNom()) ){ //On accede aux noeuds correspondant au chemin a travers leur indice dans listeLargeur 
+							dijkstra = false;
+							indDijkstra = 0;
+							listeLargeur.clear();
+							chemin.clear();
+							//System.out.println("Collision !");
+							exitValue = 5;
+							return;
+						}
+					}
+					
+					if(indDijkstra == chemin.size()){
+						dijkstra = false;
+						indDijkstra = 0;
+						listeLargeur.clear();
+						chemin.clear();
+						
+						
+						List<Couple<String,List<Attribute>>> lobs=((mas.abstractAgent)this.myAgent).observe();
+						myPosition=((mas.abstractAgent)this.myAgent).getCurrentPosition();
+
+						int indiceNoeud = indInList(myPosition, noeudsVus);
+						Node noeudActuel = noeudsVus.get(indiceNoeud);
+						noeudActuel.checkForTreasure(lobs);
+						
+						int qTreasure = noeudActuel.getTreasure();
+						int qBackpack = ((mas.abstractAgent)this.myAgent).getBackPackFreeSpace();
+						
+						//System.out.println("Agent "+this.myAgent.getLocalName()+" qTreasureToGet"+qTreasureObj+" qTreasure "+ qTreasure + " qBackpack "+ qBackpack);
+						
+						if(qTreasure == qTreasureObj){ // Si la quantite de tresor est la meme que celle attendue
+							if( ((mas.abstractAgent)this.myAgent).pick() == 0){ // L'agent n'a pas pu ramasser
+								if(noeudActuel.getTypeT() == 1)
+									typeT = 2;
+								else
+									typeT = 1;
+							}
+							else{ // L'agent a ramassé
+								typeT=noeudActuel.getTypeT();
+								lobs=((mas.abstractAgent)this.myAgent).observe();
+								noeudActuel.checkForTreasure(lobs); // update la quantité de tresor
+							}
+							
+							((mas.agents.CognitifAgent)this.myAgent).setTypeT(typeT); // L'agent connait son type de tresors
+							//System.out.println("Agent "+this.myAgent.getLocalName()+" can collect "+ typeT);
+							
+						}
+						/*else{
+							System.out.println("QTreasure changed : "+qTreasureObj+" -> "+qTreasure);
+						}*/
+					}
+				}
+			}
+		
+		
+		
+		
+		
+		}
+		
+		
+		
+		if(exitValue == 4){ // S'il est censé continuer son chemin, il peut communiquer a place et reprendre ensuite
+			Random test= new Random();
+			double resRandom = test.nextDouble();
+			if(resRandom < 0.25)
+				exitValue = 9;
+			if(resRandom >= 0.25 && resRandom < 0.50)
+				exitValue = 10;
+			if(resRandom >= 0.50)
+				exitValue = 4;
+		}
+	}
+	
+	
+	
+	
+	
+
+	@Override
+	public boolean done() {
+		return true;
+	}
+
+	public int onEnd() {
+		return exitValue;
+	}
+	
+	
+	
+	
+	
+	// Si valeur retournee est -1 alors pas dans la liste, sinon indice.
+	public int indInList(String nomNoeud, List<Node> noeudsRencontres){
+		int i;
+		for(i=0; i<noeudsRencontres.size(); ++i){
+			if(nomNoeud.equals(noeudsRencontres.get(i).getNom())){
+				return i;
+			}
+		}
+		return -1;
+	}
+}

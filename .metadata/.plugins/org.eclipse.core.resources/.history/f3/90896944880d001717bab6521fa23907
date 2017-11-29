@@ -1,0 +1,340 @@
+package mas.behaviours;
+
+import java.io.IOException;
+import java.util.List;
+import java.util.ArrayList;
+import java.util.Random;
+
+import env.Attribute;
+import env.Couple;
+import princ.Node;
+import jade.core.behaviours.Behaviour;
+
+/**************************************
+ * 
+ * 
+ * 				BEHAVIOUR
+ * 
+ * 
+ **************************************/
+
+
+public class Strategy extends Behaviour{
+	/**
+	 * When an agent choose to move
+	 *  
+	 */
+	private static final long serialVersionUID = 9088209402507795289L;
+	private List<Node> noeudsVus;
+	private int nbFerme = 0;
+	private int exitValue;
+	private boolean dijkstra;
+	private int indDijkstra, tailleDijkstra;
+	List<Node> listeLargeur;
+	int chemin[]; 
+	
+
+	public Strategy (final mas.abstractAgent myagent, List<Node> noeudsVus, int nbFermes) {
+		//super(myagent, 1000);
+		this.noeudsVus = noeudsVus;
+		this.nbFerme = nbFermes;
+		this.exitValue = 1;
+		this.dijkstra = false;
+		this.indDijkstra = 0;
+		this.tailleDijkstra = 0;
+		this.listeLargeur = new ArrayList<Node>();
+		//super(myagent);
+	}
+
+	@Override
+	public void action() {
+				
+		//Example to retrieve the current position
+		String myPosition=((mas.abstractAgent)this.myAgent).getCurrentPosition();
+
+		if (myPosition!=""){
+			//List of observable from the agent's current position
+			List<Couple<String,List<Attribute>>> lobs=((mas.abstractAgent)this.myAgent).observe();//myPosition
+			//System.out.println(this.myAgent.getLocalName()+" -- list of observables: "+lobs);
+
+			//Little pause to allow you to follow what is going on
+			/*try {
+				System.out.println("Press a key to allow the agent "+this.myAgent.getLocalName() +" to execute its next move");
+				System.in.read();
+			} catch (IOException e) {
+				e.printStackTrace();
+			}*/
+			
+			
+			
+			try {
+				Thread.sleep(500);
+			} catch (InterruptedException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+			
+			
+			
+			//list of attribute associated to the currentPosition
+			List<Attribute> lattribute= lobs.get(0).getRight();
+
+			
+			
+			//example related to the use of the backpack for the treasure hunt
+			Boolean b=false;
+			for(Attribute a:lattribute){
+				switch (a) {
+				case TREASURE:
+					System.out.println("My current backpack capacity is:"+ ((mas.abstractAgent)this.myAgent).getBackPackFreeSpace());
+					System.out.println("Value of the treasure on the current position: "+a.getValue());
+					System.out.println("The agent grabbed :"+((mas.abstractAgent)this.myAgent).pick());
+					System.out.println("the remaining backpack capacity is: "+ ((mas.abstractAgent)this.myAgent).getBackPackFreeSpace());
+					System.out.println("The value of treasure on the current position: (unchanged before a new call to observe()): "+a.getValue());
+					b=true;
+					break;
+
+				default:
+					break;
+				}
+			}
+			
+			
+			
+			
+
+			//If the agent picked (part of) the treasure
+			if (b){
+				List<Couple<String,List<Attribute>>> lobs2=((mas.abstractAgent)this.myAgent).observe();//myPosition
+				System.out.println("lobs after picking "+lobs2);
+			}
+		
+			
+			
+			
+			
+			/*****
+			 * If we are not already doing a computed dijkstra
+			 *****/
+			if(!dijkstra){
+				Node noeudActuel;
+				Node noeudVoisin;
+				int indiceNoeud;
+	
+				/*
+				 * First, we look at the node we are on
+				 */
+				// Si nouveau noeud, ajouter le noeud - seulement pour le premier
+				if(noeudsVus.isEmpty()){
+					noeudActuel = new Node(myPosition, lobs);
+					noeudActuel.fermer();
+					noeudsVus.add(noeudActuel);
+					nbFerme++;
+				}
+				else{ // Ce noeud existe forcement deja dans les noeuds a visiter - une mise a jour est suffisante
+					indiceNoeud = indInList(myPosition, noeudsVus);
+					noeudActuel = noeudsVus.get(indiceNoeud);
+					noeudActuel.checkForTreasure(lobs);
+					noeudActuel.fermer();
+					nbFerme++;
+				}
+				
+				
+				
+				
+				/*
+				 * We are now looking at the neighbors
+				 */
+				String nomVoisin;
+				List<String> voisinsDejaVus = new ArrayList<String>();
+				int cpt=0;
+				
+				
+				for(Couple<String,List<Attribute>> infoVoisin : lobs){
+	
+					nomVoisin = infoVoisin.getLeft();
+					
+					if(nomVoisin != myPosition){ // Vraiment un voisin - sinon il s'agit du noeud ou l'on se trouve
+						
+						indiceNoeud=indInList(nomVoisin, noeudsVus);
+						
+						if(indiceNoeud != -1){ // S'il appartient aux noeuds deja visites - maj de la liste des voisins du noeud actuel
+							
+							noeudActuel.ajoutVoisin(noeudsVus.get(indiceNoeud));
+
+							if(!noeudsVus.get(indiceNoeud).getOpen()){ // Check pour savoir si on est deja alle sur ce voisin
+								voisinsDejaVus.add(noeudsVus.get(indiceNoeud).getNom());
+								cpt++;
+							}
+							
+							
+						}
+						
+						else{ //Creation du noeud + ajout aux voisins du noeud actuel
+
+							noeudVoisin = new Node(nomVoisin, lobs);
+							noeudsVus.add(noeudVoisin);
+							noeudActuel.ajoutVoisin(noeudVoisin);
+						}
+						
+						
+					}
+					
+					
+				} // On a normalement ajoute tous les voisins comme il faut
+				
+				
+				
+				
+				// Check if we are on the last node that wasn't explored and return if we are.
+				if(noeudsVus.size() == nbFerme){
+					exitValue = 3;
+					System.out.println("Agent "+this.myAgent.getLocalName()+" explored the whole map.");
+					done();
+					return;
+				}
+				
+				
+				else{ // Keep exploring
+					
+					
+					/*
+					 * We can now end this part with the movement :
+					 * "go to a neighbor" (if)
+					 * or 
+					 * "execute Dijkstra" (else)
+					 */
+					
+					if(cpt < lobs.size()-1){ // SI ON PEUT ACCEDER A UN VOISIN DIRECT
+						
+						voisinsDejaVus.add(myPosition);
+						
+						//Random move from the current position
+						Random r= new Random();
+						int moveId=r.nextInt(lobs.size()-voisinsDejaVus.size());
+						
+						//Don't go to a neighbor already visited
+						while(voisinsDejaVus.contains(lobs.get(moveId).getLeft())){
+							moveId+=1;
+						}
+						((mas.abstractAgent)this.myAgent).moveTo(lobs.get(moveId).getLeft());
+						voisinsDejaVus.clear();
+					}
+					
+					
+					else{ // SINON DIJKSTRA
+						dijkstra = true;
+						listeLargeur.clear();
+						int indice = 0, j = 0, taille = noeudsVus.size();
+						int tabInd[] = new int[2*taille];
+						chemin = new int[taille]; 
+						listeLargeur.add(noeudActuel);
+						tabInd[0] = 0;
+						boolean test = false;
+						
+						for(int i=0;i<taille; ++i) {
+							for(Node n : listeLargeur.get(i).getSuccesseurs()){ //Un peu redondant car on test les memes noeuds plusieurs fois comme un voisin est inclus dans successeur de son voisin
+								indice++;
+								listeLargeur.add(n);
+								tabInd[indice]=i;
+								
+								if(n.getOpen()){
+									test=true;
+									break;
+								}
+								
+							}
+							if(test)
+								break;
+						}
+						
+						
+			
+						
+						
+						while(indice!=0){
+							chemin[j]=indice;
+							indice=tabInd[indice];
+							tailleDijkstra++;
+							j++;
+						}
+							
+						indDijkstra = 1;
+						((mas.abstractAgent)this.myAgent).moveTo(listeLargeur.get(chemin[tailleDijkstra-indDijkstra]).getNom()); //On accede aux noeuds correspondant au chemin a travers leur indice dans listeLargeur 
+					}
+				}
+			}
+			
+			
+			
+			
+			
+			
+			/*****
+			 * If we are already doing a computed dijkstra
+			 *****/
+			else{
+				if(indDijkstra < tailleDijkstra){
+					indDijkstra++;
+					((mas.abstractAgent)this.myAgent).moveTo(listeLargeur.get(chemin[tailleDijkstra-indDijkstra]).getNom()); //On accede aux noeuds correspondant au chemin a travers leur indice dans listeLargeur 
+				}
+				
+				if(indDijkstra == tailleDijkstra || listeLargeur.get(0).getOpen() == false){
+					dijkstra = false;
+					indDijkstra = 0;
+					tailleDijkstra = 0;
+					listeLargeur.clear();
+				}
+			}
+			
+			
+		}
+			
+			
+			
+		//System.out.println("Agent "+this.myAgent.getLocalName()+", size of the list of seen "+noeudsVus.size());
+		((mas.agents.CognitifAgent)this.myAgent).setCarte(noeudsVus);
+		Random test= new Random();
+		exitValue=test.nextInt(3);
+		//exitValue=0;
+	}
+	
+	
+	@Override
+	public boolean done(){
+		return true;
+	}
+	
+	
+	
+	
+	public int onEnd() {
+		return exitValue;
+	}
+	
+	
+	
+	
+	
+	
+	// Si valeur retournee est -1 alors pas dans la liste, sinon indice.
+	public int indInList(String nomNoeud, List<Node> noeudsRencontres){
+		int i;
+		for(i=0; i<noeudsRencontres.size(); ++i){
+			if(nomNoeud.equals(noeudsRencontres.get(i).getNom())){
+				return i;
+			}
+		}
+		return -1;
+	}
+	
+}
+
+
+// Utiliser un SimpleBehaviour plutot qu'un TickerBehavior, en modifiant la methode done() de facon a reexecuter la methode action()
+
+/*
+ Strategie de deplacement : aleatoire parmis les voisins puis si pas de voisins ouvert alors prendre l'ouvert le plus proche en utilisant Dijkstra pour trouver le plus court chemin y menant.
+ Representation sous forme de liste d'adjacence. 
+ */
+
